@@ -1,0 +1,18 @@
+config:
+  aws:profile: dev
+  aws:region: us-west-1
+  pulumi-dev:data:
+    active: true
+    no_of_subnets: 6 # desired level
+    vpcCidr: 10.0.0.0/16
+    vpcName: devenv
+    destination_cidr_block: 0.0.0.0/0
+    publicSubnetCidr0: "10.0.1.0/24"
+    publicSubnetCidr1: "10.0.2.0/24"
+    publicSubnetCidr2: "10.0.3.0/24"
+    privateSubnetCidr0: "10.0.4.0/24"
+    privateSubnetCidr1: "10.0.5.0/24"
+    privateSubnetCidr2: "10.0.6.0/24"
+    
+
+    
