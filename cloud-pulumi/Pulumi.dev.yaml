@@ -7,7 +7,7 @@ config:
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
     destination_cidr_block: 0.0.0.0/0
-   
+  
     
 
     
