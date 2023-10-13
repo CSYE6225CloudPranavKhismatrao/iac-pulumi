@@ -2,9 +2,19 @@ import pulumi
 import pulumi_aws as aws
 import ipaddress
 
+def calculate_subnets(vpc_cidr, num_subnets):
+    try:
+        vpc_network = ipaddress.IPv4Network(vpc_cidr)
+    except ValueError:
+        print("Invalid VPC CIDR format. Example format: 10.0.0.0/16")
+        return []
 
+    subnet_bits = vpc_network.max_prefixlen - num_subnets
 
- 
+    subnets = list(vpc_network.subnets(new_prefix=subnet_bits))
+    
+    return subnets
+
 
 # Fetch the configuration values
 config = pulumi.Config()
@@ -15,17 +25,6 @@ data = config.require_object("data")
 vpc_name = data.get("vpcName")
 vpc_cidr = data.get("vpcCidr")
 
-def generate_ip_addresses(subnet):
-    try:
-        network = ipaddress.IPv4Network(subnet, strict=False)
-        ip_list = [str(ip) for ip in network.hosts()]
-        return ip_list
-    except ValueError as e:
-        return str(e)
-
-# subnet = "10.0.1.0/24"
-ip_addresses = generate_ip_addresses(data.get("vpcCidr"))
-
 # Create the VPC using the fetched config values
 Virtual_private_cloud = aws.ec2.Vpc(vpc_name,
     cidr_block=vpc_cidr,
@@ -34,7 +33,6 @@ Virtual_private_cloud = aws.ec2.Vpc(vpc_name,
         "Name": vpc_name,
     })
 
- 
 
 # Define availability zones
 azs = aws.get_availability_zones().names
@@ -45,19 +43,23 @@ no_of_subnets = 3 # max
 print(num_azs)
 
 if (num_azs < 3):
-    no_of_subnets = num_azs * 2
+    no_of_subnets = num_azs
 # Create 3 public and 3 private subnets
 public_subnets = []
 private_subnets = []
 
- 
+subnet_cidrs = calculate_subnets(vpc_cidr, no_of_subnets * 2)
+
 k = 0
+# print(subnet_strings)
+# print("IP 0 ", ip_list[0])
+
 for i in range(no_of_subnets):
     az_index = i % num_azs
     public_subnet = aws.ec2.Subnet(f"{vpc_name}-public-subnet-{i}",
-        cidr_block= data.get(f"publicSubnetCidr{i}"),
+        cidr_block= str(subnet_cidrs[k]), #data.get(f'publicSubnetCidr{i}'),
         availability_zone=azs[az_index],
-        vpc_id=Virtual_private_cloud.id,
+        vpc_id = Virtual_private_cloud.id,
         map_public_ip_on_launch=True,
         tags={
             "Name": f"{vpc_name}-public-subnet-{i}",
@@ -66,7 +68,7 @@ for i in range(no_of_subnets):
     k += 1
 
     private_subnet = aws.ec2.Subnet(f"{vpc_name}-private-subnet-{i}",
-        cidr_block= data.get(f"privateSubnetCidr{i}"),
+        cidr_block= str(subnet_cidrs[k]), #data.get(f'privateSubnetCidr{i}'),
         availability_zone=azs[az_index],
         vpc_id=Virtual_private_cloud.id,
         tags={
@@ -128,3 +130,5 @@ public_route = aws.ec2.Route(f"{vpc_name}-public-route",
     route_table_id=public_route_table.id,
     destination_cidr_block="0.0.0.0/0",
     gateway_id=internet_gateway.id)
+
+# pdb.set_trace()
