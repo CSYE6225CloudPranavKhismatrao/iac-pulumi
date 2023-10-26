@@ -181,6 +181,62 @@ def create_security_group(vpc_id, destination_block):
     return security_group
 
 
+# Assignment 6 Code
+def create_database_security_group(vpc_id, security_group):
+    """Creates a security group for RDS instances and allows PostgreSQL traffic from the application security group."""
+
+    database_security_group = aws.ec2.SecurityGroup("DatabaseSecurityGroup",
+                                                    description="Database security group for PostgreSQL",
+                                                    vpc_id=vpc_id,
+                                                    ingress=[
+                                                        {
+                                                            'description': 'PostgreSQL traffic from application security group',
+                                                            'fromPort': 5432,
+                                                            'toPort': 5432,
+                                                            'protocol': 'tcp',
+                                                            'securityGroups': [security_group.id]
+                                                            # Refer to your application security group here
+                                                        }
+                                                    ],
+                                                    egress=[{
+                                                        'fromPort': 0,
+                                                        'toPort': 65535,
+                                                        'protocol': 'tcp',
+                                                        'cidrBlocks': ['0.0.0.0/0']  # Restrict egress access as needed
+                                                    }]
+                                                    )
+
+    return database_security_group
+
+
+# Assignment 6 Code
+def create_db_parameter_group(db_instance_name):
+    """Create a custom parameter group for your PostgreSQL RDS instance."""
+
+    db_parameter_group = aws.rds.ParameterGroup(db_instance_name,
+                                                family="postgres12",  # Adjust this to match your PostgreSQL version
+                                                description="Custom parameter group for PostgreSQL RDS instance",
+                                                # resource_name="RDS_Parameter_Group",
+                                                name="rds-parameter-group"
+                                                )
+
+    return db_parameter_group
+
+
+def create_private_subnet_group(subnet_ids, subnet_group_name):
+    """Create a DB subnet group for RDS instances using private subnets."""
+
+    db_subnet_group = aws.rds.SubnetGroup(subnet_group_name,
+                                          subnet_ids=subnet_ids,
+                                          name=subnet_group_name,
+                                          description="DB Subnet Group for private RDS instances",
+                                          tags={
+                                              "Name": subnet_group_name,
+                                          }
+                                          )
+    return db_subnet_group
+
+
 def lookup_ami():
     """Looks up the latest AMI for the csye6225-debian-instance-ami AMI family.
 
@@ -193,10 +249,10 @@ def lookup_ami():
     ami = aws.ec2.get_ami(
         executable_users=["self"],
         filters=[
-            aws.ec2.GetAmiFilterArgs(
-                name="name",
-                values=["csye6225_2023_*"],
-            ),
+            # aws.ec2.GetAmiFilterArgs(
+            #     name="name",
+            #     values=["csye6225_*"],
+            # ),
             aws.ec2.GetAmiFilterArgs(
                 name="root-device-type",
                 values=["ebs"],
@@ -207,13 +263,13 @@ def lookup_ami():
             ),
         ],
         most_recent=True,
-        name_regex="csye6225_2023_*",
+        name_regex="csye6225_*",
         owners=["self"])
 
     return ami.id
 
 
-def create_instance(ami_id, subnet_id, security_group_id):
+def create_instance(ami_id, subnet_id, security_group_id, rds_instance):
     """Creates a new EC2 instance.
 
     Args:
@@ -226,13 +282,35 @@ def create_instance(ami_id, subnet_id, security_group_id):
     """
 
     # ec2 = boto3.resource('ec2')
-    ami_id = 'ami-0541f6be93c08c0f7'
+    # ami_id = 'ami-0541f6be93c08c0f7'
+    app_properties = "/tmp/application.properties"
+    user_data = [
+        "#!/bin/bash",
+        f"echo 'spring.jpa.hibernate.ddl-auto=update' >> {app_properties}",
+        f"echo 'logging.level.org.springframework=debug' >> {app_properties}",
+        f"echo 'spring.datasource.username=csye6225' >> {app_properties}",
+        f"echo 'spring.datasource.password=mypassword' >> {app_properties}"
+    ]
+    rds_instance_hostname = pulumi.Output.concat(
+        "jdbc:postgresql://",
+        rds_instance,
+        ":5432/",
+        "csye6225"
+    )
+
+    user_data = pulumi.Output.concat(
+        "\n".join(user_data),
+        "\n",
+        rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"))
+
+    user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/application.properties", "\n")
 
     instance = aws.ec2.Instance("instance",
                                 ami=ami_id,
                                 instance_type="t2.micro",
                                 subnet_id=subnet_id,
                                 key_name="ec2-key",
+                                user_data=user_data,
                                 root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
                                     volume_type=data.get("root_volume_type"),
                                     volume_size=data.get("root_volume_size"),
@@ -240,31 +318,38 @@ def create_instance(ami_id, subnet_id, security_group_id):
                                 ),
                                 disable_api_termination=False,
                                 vpc_security_group_ids=[security_group_id])
-    # DisableApiTermination=True)
-
-
-    # instance = aws.ec2.create_instance(
-    #     ImageId=ami_id,
-    #     InstanceType='t2.micro',
-    #     SubnetId=subnet_id,
-    #     KeyName='demo_ssh_key',
-    #     DisableApiTermination=True,
-    #     RootBlockDevice={
-    #         'VolumeSize': 25,
-    #         'VolumeType': 'gp2',
-    #     },
-    #     VpcSecurityGroupIds=[security_group_id],
-    #     Tags={
-    #         'Name': 'HelloWorld',
-    #     },
-    # )
 
     return instance
 
 
+def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
+                        security_group_id):
+    """Create an RDS instance with the specified configuration."""
+    # Create a new parameter group
+    parameter_group = create_db_parameter_group(db_instance_name)
+
+    rds_instance = aws.rds.Instance("rds-instance",
+                                    identifier=db_instance_name,
+                                    skip_final_snapshot=True,
+                                    allocated_storage=20,
+                                    storage_type="gp2",
+                                    engine=db_engine,
+                                    engine_version="12",
+                                    parameter_group_name=parameter_group,
+                                    instance_class=db_instance_class,
+                                    name=db_instance_name,
+                                    multi_az=False,
+                                    username=username,
+                                    password=password,
+                                    db_subnet_group_name=subnet_group_name,
+                                    vpc_security_group_ids=[security_group_id]
+                                    )
+
+    return rds_instance
+
+
 def demo():
     """
-
     :rtype: object
     """
     vpc_id = Virtual_private_cloud.id
@@ -273,60 +358,30 @@ def demo():
     # Create the security group.
     security_group = create_security_group(vpc_id, destination_block)
 
+    database_security_group = create_database_security_group(vpc_id, security_group)
+
     # Look up the latest AMI for the csye6225-debian-instance-ami AMI family.
     # ami_id = lookup_ami()
 
+    private_subnet_ids = [privateSubnet.id for privateSubnet in private_subnets]
+
+    private_subnet_group = create_private_subnet_group(private_subnet_ids, "private-subnet-group")
+
+    # Create the RDS instance with the specified configuration.
+    rds_instance = create_rds_instance(
+        db_instance_name="csye6225",
+        db_engine="postgres",  # Use "mysql" for MySQL, "mariadb" for MariaDB, "postgres" for PostgreSQL
+        db_instance_class="db.t2.micro",  # Use the cheapest class available
+        username="csye6225",
+        password="mypassword",
+        subnet_group_name="private-subnet-group",  # Replace with the name of your private subnet group
+        security_group_id=database_security_group.id
+    )
+
     # Create the EC2 instance.
-    instance = create_instance("ami_id", public_subnets[0], security_group.id)
+    instance = create_instance("ami-0787ce8a2612e6878", public_subnets[0], security_group.id, rds_instance.address)
+
+    return rds_instance, instance
 
 
-demo()
-
-# application_security_group = aws.ec2.SecurityGroup("application_security_group",
-#                                                    description="Security group for EC2 instances hosting web applications",
-#                                                    ingress=[
-#                                                        # Allow TCP traffic on ports 22, 80, 443, and the port on which your application runs from anywhere in the world.
-#                                                        aws.ec2.SecurityGroupRule(
-#                                                            "sg-rule-1",
-#                                                            protocol="tcp",
-#                                                            from_port=22,
-#                                                            to_port=22,
-#                                                            cidr_blocks=["0.0.0.0/0"],
-#                                                        ),
-#                                                        aws.ec2.SecurityGroupRule(
-#                                                            "sg-rule-2",
-#                                                            protocol="tcp",
-#                                                            from_port=80,
-#                                                            to_port=80,
-#                                                            cidr_blocks=["0.0.0.0/0"],
-#                                                        ),
-#                                                        aws.ec2.SecurityGroupRule(
-#                                                            "sg-rule-3",
-#                                                            protocol="tcp",
-#                                                            from_port=443,
-#                                                            to_port=443,
-#                                                            cidr_blocks=["0.0.0.0/0"],
-#                                                        ),
-#                                                        # Add a rule to allow traffic on the port on which your application runs.
-#                                                        aws.ec2.SecurityGroupRule(
-#                                                            "sg-rule-4",
-#                                                            protocol="tcp",
-#                                                            from_port=os.environment["PORT"],
-#                                                            to_port=os.environment["PORT"],
-#                                                            cidr_blocks=["0.0.0.0/0"],
-#                                                        ),
-#                                                    ],
-#                                                    )
-# Create an EC2 instance.
-# ec2_instance = aws.ec2.Instance("web_server",
-#                                 ami="ami-0599146fa6dd05c5f",
-#                                 instance_type="t2.micro",
-#                                 resource_name="my-web-server",
-#                                 vpc_security_group_ids=[application_security_group.id],
-#                                 vpc_subnet_id=pulumi.get_stack_resource_output("subnet", "id"),
-#                                 associate_public_ip_address=True,
-#                                 terminate_ebs_volumes_on_instance_termination=True,
-#                                 )
-#
-# # Export the public IP address of the EC2 instance.
-# pulumi.export("public_ip", ec2_instance.public_ip)
+rds_instance, instance = demo()
