@@ -4,9 +4,6 @@ import ipaddress
 import os
 
 
-# import boto3
-
-
 def calculate_subnets(vpc_cidr, num_subnets):
     try:
         vpc_network = ipaddress.IPv4Network(vpc_cidr)
@@ -175,7 +172,12 @@ def create_security_group(vpc_id, destination_block):
                                                    'Ipv6CidrBlocks': ['::/0'],
                                                },
                                            ],
-                                           egress=[],
+                                           egress=[{
+                                               "cidr_blocks": ["0.0.0.0/0"],
+                                               "from_port": 0,
+                                               "to_port": 0,
+                                               "protocol": "-1",  # 'all'
+                                           }],
                                            )
 
     return security_group
@@ -237,39 +239,7 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
     return db_subnet_group
 
 
-def lookup_ami():
-    """Looks up the latest AMI for the csye6225-debian-instance-ami AMI family.
-
-    Returns:
-      The AMI ID.
-    """
-
-    # ec2 = boto3.resource('ec2')
-
-    ami = aws.ec2.get_ami(
-        executable_users=["self"],
-        filters=[
-            # aws.ec2.GetAmiFilterArgs(
-            #     name="name",
-            #     values=["csye6225_*"],
-            # ),
-            aws.ec2.GetAmiFilterArgs(
-                name="root-device-type",
-                values=["ebs"],
-            ),
-            aws.ec2.GetAmiFilterArgs(
-                name="virtualization-type",
-                values=["hvm"],
-            ),
-        ],
-        most_recent=True,
-        name_regex="csye6225_*",
-        owners=["self"])
-
-    return ami.id
-
-
-def create_instance(ami_id, subnet_id, security_group_id, rds_instance):
+def create_instance(ami_id, subnet_id, security_group_id, rds_instance1):
     """Creates a new EC2 instance.
 
     Args:
@@ -287,13 +257,12 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance):
     user_data = [
         "#!/bin/bash",
         f"echo 'spring.jpa.hibernate.ddl-auto=update' >> {app_properties}",
-        f"echo 'logging.level.org.springframework=debug' >> {app_properties}",
         f"echo 'spring.datasource.username=csye6225' >> {app_properties}",
         f"echo 'spring.datasource.password=mypassword' >> {app_properties}"
     ]
     rds_instance_hostname = pulumi.Output.concat(
         "jdbc:postgresql://",
-        rds_instance,
+        rds_instance1.address,
         ":5432/",
         "csye6225"
     )
@@ -304,22 +273,23 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance):
         rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"))
 
     user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/application.properties", "\n")
+    outp = pulumi.Output.concat("EC2 Security Group ID ", security_group_id)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
+    instance1 = aws.ec2.Instance("instance",
+                                 ami=ami_id,
+                                 instance_type="t2.micro",
+                                 subnet_id=subnet_id,
+                                 key_name="ec2-key",
+                                 user_data=user_data,
+                                 root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
+                                     volume_type=data.get("root_volume_type"),
+                                     volume_size=data.get("root_volume_size"),
+                                     delete_on_termination=True
+                                 ),
+                                 disable_api_termination=False,
+                                 vpc_security_group_ids=[security_group_id])
 
-    instance = aws.ec2.Instance("instance",
-                                ami=ami_id,
-                                instance_type="t2.micro",
-                                subnet_id=subnet_id,
-                                key_name="ec2-key",
-                                user_data=user_data,
-                                root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
-                                    volume_type=data.get("root_volume_type"),
-                                    volume_size=data.get("root_volume_size"),
-                                    delete_on_termination=True
-                                ),
-                                disable_api_termination=False,
-                                vpc_security_group_ids=[security_group_id])
-
-    return instance
+    return instance1
 
 
 def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
@@ -327,25 +297,26 @@ def create_rds_instance(db_instance_name, db_engine, db_instance_class, username
     """Create an RDS instance with the specified configuration."""
     # Create a new parameter group
     parameter_group = create_db_parameter_group(db_instance_name)
+    outp = pulumi.Output.concat("EC2 RDS Security Group ID ", security_group_id)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
+    rds_instance2 = aws.rds.Instance("rds-instance",
+                                     identifier=db_instance_name,
+                                     skip_final_snapshot=True,
+                                     allocated_storage=20,
+                                     storage_type="gp2",
+                                     engine=db_engine,
+                                     engine_version="12",
+                                     parameter_group_name=parameter_group,
+                                     instance_class=db_instance_class,
+                                     name=db_instance_name,
+                                     multi_az=False,
+                                     username=username,
+                                     password=password,
+                                     db_subnet_group_name=subnet_group_name,
+                                     vpc_security_group_ids=[security_group_id]
+                                     )
 
-    rds_instance = aws.rds.Instance("rds-instance",
-                                    identifier=db_instance_name,
-                                    skip_final_snapshot=True,
-                                    allocated_storage=20,
-                                    storage_type="gp2",
-                                    engine=db_engine,
-                                    engine_version="12",
-                                    parameter_group_name=parameter_group,
-                                    instance_class=db_instance_class,
-                                    name=db_instance_name,
-                                    multi_az=False,
-                                    username=username,
-                                    password=password,
-                                    db_subnet_group_name=subnet_group_name,
-                                    vpc_security_group_ids=[security_group_id]
-                                    )
-
-    return rds_instance
+    return rds_instance2
 
 
 def demo():
@@ -368,7 +339,7 @@ def demo():
     private_subnet_group = create_private_subnet_group(private_subnet_ids, "private-subnet-group")
 
     # Create the RDS instance with the specified configuration.
-    rds_instance = create_rds_instance(
+    rds_instance_demo = create_rds_instance(
         db_instance_name="csye6225",
         db_engine="postgres",  # Use "mysql" for MySQL, "mariadb" for MariaDB, "postgres" for PostgreSQL
         db_instance_class="db.t2.micro",  # Use the cheapest class available
@@ -379,9 +350,9 @@ def demo():
     )
 
     # Create the EC2 instance.
-    instance = create_instance("ami-0787ce8a2612e6878", public_subnets[0], security_group.id, rds_instance.address)
+    instance_demo = create_instance("ami-0dac98159ccab34d4", public_subnets[0], security_group.id, rds_instance_demo)
 
-    return rds_instance, instance
+    return rds_instance_demo, instance_demo
 
 
 rds_instance, instance = demo()
