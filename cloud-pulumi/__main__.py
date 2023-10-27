@@ -249,6 +249,7 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
 
 
 def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
+
     """Creates a new EC2 instance.
 
     Args:
@@ -272,6 +273,7 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
     rds_instance_hostname = pulumi.Output.concat(
         "jdbc:postgresql://",
         rds_instance_for_ec2.address,
+
         ":5432/",
         "csye6225"
     )
@@ -299,6 +301,7 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
                                     vpc_security_group_ids=[security_group_id])
 
     return ec2_instance
+
 
 
 def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
@@ -355,11 +358,13 @@ def demo():
         username=db_username,
         password=db_password,
         subnet_group_name=private_subnet_group_name,  # Replace with the name of your private subnet group
+
         security_group_id=database_security_group.id
     )
 
     # Create the EC2 instance.
     instance_demo = create_instance(ami_id, public_subnets[0], security_group.id, rds_instance_demo)
+
 
     return rds_instance_demo, instance_demo
 
