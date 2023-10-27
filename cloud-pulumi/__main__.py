@@ -22,9 +22,20 @@ def calculate_subnets(vpc_cidr, num_subnets):
 config = pulumi.Config()
 data = config.require_object("data")
 
-# Extract key configuration values
+# ======================================= Extract key configuration values==============================================
 vpc_name = data.get("vpcName")
 vpc_cidr = data.get("vpcCidr")
+destination_cidr_block = data.get("destination_cidr_block")
+postgres_port = data.get("postgres_port")
+
+private_subnet_group_name = data.get("private-subnet-group")
+db_name = data.get("db_name")
+db_username = data.get("db_username")
+db_password = data.get("db_password")
+db_instance_class = data.get("db_instance_class")
+db_engine = data.get("db_engine")
+ami_id = data.get("ami_id")
+# ========================================================================
 
 # Create the VPC using the fetched config values
 Virtual_private_cloud = aws.ec2.Vpc(vpc_name,
@@ -115,11 +126,9 @@ for subnet in private_subnets:
 # Create a public route in the public route table
 public_route = aws.ec2.Route(f"{vpc_name}-public-route",
                              route_table_id=public_route_table.id,
-                             destination_cidr_block="0.0.0.0/0",
+                             destination_cidr_block=destination_cidr_block,
                              gateway_id=internet_gateway.id)
 
-
-# pdb.set_trace()
 
 
 def create_security_group(vpc_id, destination_block):
@@ -132,9 +141,6 @@ def create_security_group(vpc_id, destination_block):
     Returns:
       The newly created security group.
     """
-
-    # ec2 = boto3.resource('ec2')
-
     security_group = aws.ec2.SecurityGroup("AppSecurityGrp",
                                            description='Application security group',
                                            vpc_id=vpc_id,
@@ -193,8 +199,8 @@ def create_database_security_group(vpc_id, security_group):
                                                     ingress=[
                                                         {
                                                             'description': 'PostgreSQL traffic from application security group',
-                                                            'fromPort': 5432,
-                                                            'toPort': 5432,
+                                                            'fromPort': postgres_port,
+                                                            'toPort': postgres_port,
                                                             'protocol': 'tcp',
                                                             'securityGroups': [security_group.id]
                                                             # Refer to your application security group here
@@ -211,6 +217,9 @@ def create_database_security_group(vpc_id, security_group):
     return database_security_group
 
 
+rds_parameter_grp = data.get("rds_parameter_grp")
+
+
 # Assignment 6 Code
 def create_db_parameter_group(db_instance_name):
     """Create a custom parameter group for your PostgreSQL RDS instance."""
@@ -219,7 +228,7 @@ def create_db_parameter_group(db_instance_name):
                                                 family="postgres12",  # Adjust this to match your PostgreSQL version
                                                 description="Custom parameter group for PostgreSQL RDS instance",
                                                 # resource_name="RDS_Parameter_Group",
-                                                name="rds-parameter-group"
+                                                name=rds_parameter_grp
                                                 )
 
     return db_parameter_group
@@ -228,7 +237,7 @@ def create_db_parameter_group(db_instance_name):
 def create_private_subnet_group(subnet_ids, subnet_group_name):
     """Create a DB subnet group for RDS instances using private subnets."""
 
-    db_subnet_group = aws.rds.SubnetGroup(subnet_group_name,
+    db_subnet_group = aws.rds.SubnetGroup("private-subnet-group",
                                           subnet_ids=subnet_ids,
                                           name=subnet_group_name,
                                           description="DB Subnet Group for private RDS instances",
@@ -239,7 +248,8 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
     return db_subnet_group
 
 
-def create_instance(ami_id, subnet_id, security_group_id, rds_instance1):
+def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
+
     """Creates a new EC2 instance.
 
     Args:
@@ -262,7 +272,8 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance1):
     ]
     rds_instance_hostname = pulumi.Output.concat(
         "jdbc:postgresql://",
-        rds_instance1.address,
+        rds_instance_for_ec2.address,
+
         ":5432/",
         "csye6225"
     )
@@ -272,24 +283,25 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance1):
         "\n",
         rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"))
 
-    user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/application.properties", "\n")
+    user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/webapp/application.properties", "\n")
     outp = pulumi.Output.concat("EC2 Security Group ID ", security_group_id)
     outp.apply(lambda id: print(f"Hello, {id}!"))
-    instance1 = aws.ec2.Instance("instance",
-                                 ami=ami_id,
-                                 instance_type="t2.micro",
-                                 subnet_id=subnet_id,
-                                 key_name="ec2-key",
-                                 user_data=user_data,
-                                 root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
-                                     volume_type=data.get("root_volume_type"),
-                                     volume_size=data.get("root_volume_size"),
-                                     delete_on_termination=True
-                                 ),
-                                 disable_api_termination=False,
-                                 vpc_security_group_ids=[security_group_id])
+    ec2_instance = aws.ec2.Instance("instance",
+                                    ami=ami_id,
+                                    instance_type="t2.micro",
+                                    subnet_id=subnet_id,
+                                    key_name="ec2-key",
+                                    user_data=user_data,
+                                    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
+                                        volume_type=data.get("root_volume_type"),
+                                        volume_size=data.get("root_volume_size"),
+                                        delete_on_termination=True
+                                    ),
+                                    disable_api_termination=False,
+                                    vpc_security_group_ids=[security_group_id])
 
-    return instance1
+    return ec2_instance
+
 
 
 def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
@@ -299,24 +311,24 @@ def create_rds_instance(db_instance_name, db_engine, db_instance_class, username
     parameter_group = create_db_parameter_group(db_instance_name)
     outp = pulumi.Output.concat("EC2 RDS Security Group ID ", security_group_id)
     outp.apply(lambda id: print(f"Hello, {id}!"))
-    rds_instance2 = aws.rds.Instance("rds-instance",
-                                     identifier=db_instance_name,
-                                     skip_final_snapshot=True,
-                                     allocated_storage=20,
-                                     storage_type="gp2",
-                                     engine=db_engine,
-                                     engine_version="12",
-                                     parameter_group_name=parameter_group,
-                                     instance_class=db_instance_class,
-                                     name=db_instance_name,
-                                     multi_az=False,
-                                     username=username,
-                                     password=password,
-                                     db_subnet_group_name=subnet_group_name,
-                                     vpc_security_group_ids=[security_group_id]
-                                     )
+    rdsInstance = aws.rds.Instance("rds-instance",
+                                   identifier=db_instance_name,
+                                   skip_final_snapshot=True,
+                                   allocated_storage=20,
+                                   storage_type="gp2",
+                                   engine=db_engine,
+                                   engine_version="12",
+                                   parameter_group_name=parameter_group,
+                                   instance_class=db_instance_class,
+                                   name=db_instance_name,
+                                   multi_az=False,
+                                   username=username,
+                                   password=password,
+                                   db_subnet_group_name=subnet_group_name,
+                                   vpc_security_group_ids=[security_group_id]
+                                   )
 
-    return rds_instance2
+    return rdsInstance
 
 
 def demo():
@@ -336,21 +348,23 @@ def demo():
 
     private_subnet_ids = [privateSubnet.id for privateSubnet in private_subnets]
 
-    private_subnet_group = create_private_subnet_group(private_subnet_ids, "private-subnet-group")
+    private_subnet_group = create_private_subnet_group(private_subnet_ids, private_subnet_group_name)
 
     # Create the RDS instance with the specified configuration.
     rds_instance_demo = create_rds_instance(
-        db_instance_name="csye6225",
-        db_engine="postgres",  # Use "mysql" for MySQL, "mariadb" for MariaDB, "postgres" for PostgreSQL
-        db_instance_class="db.t2.micro",  # Use the cheapest class available
-        username="csye6225",
-        password="mypassword",
-        subnet_group_name="private-subnet-group",  # Replace with the name of your private subnet group
+        db_instance_name=db_name,
+        db_engine=db_engine,  # Use "mysql" for MySQL, "mariadb" for MariaDB, "postgres" for PostgreSQL
+        db_instance_class=db_instance_class,  # Use the cheapest class available
+        username=db_username,
+        password=db_password,
+        subnet_group_name=private_subnet_group_name,  # Replace with the name of your private subnet group
+
         security_group_id=database_security_group.id
     )
 
     # Create the EC2 instance.
-    instance_demo = create_instance("ami-0dac98159ccab34d4", public_subnets[0], security_group.id, rds_instance_demo)
+    instance_demo = create_instance(ami_id, public_subnets[0], security_group.id, rds_instance_demo)
+
 
     return rds_instance_demo, instance_demo
 

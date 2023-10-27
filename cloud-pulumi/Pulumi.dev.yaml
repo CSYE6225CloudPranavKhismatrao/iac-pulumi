@@ -9,6 +9,17 @@ config:
     destination_cidr_block: 0.0.0.0/0
     root_volume_size: 25
     root_volume_type: gp2
+    postgres_port: 5432
+    rds_parameter_grp: rds-parameter-group
+    private_subnet_group_name: private-subnet-group
+    db_name: csye6225
+    db_engine: postgres
+    db_instance_class: db.t2.micro
+    db_username: csye6225
+    db_password: mypassword
+    ami_id: ami-0d57a3539abd1acd1
+
+
   
     
 
