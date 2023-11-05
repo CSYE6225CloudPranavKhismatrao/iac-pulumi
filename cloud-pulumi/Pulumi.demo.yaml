@@ -1,9 +1,21 @@
+encryptionsalt: v1:Cbo/DfuFQMY=:v1:6FHswrM9eqIsGO5h:DuQaVaMu2iVv0px4Wu4mBJ3rx/WLkw==
 config:
-  aws:profile: demo
+  aws:profile: dev
   aws:region: us-east-1
   pulumi-dev:data:
     active: true
+    ami_id: ami-03b15fb3a737af2f1
+    db_engine: postgres
+    db_instance_class: db.t2.micro
+    db_name: csye6225
+    db_password: mypassword
+    db_username: csye6225
+    destination_cidr_block: 0.0.0.0/0
     no_of_subnets: 6 # desired level
+    postgres_port: 5432
+    private_subnet_group_name: private-subnet-group
+    rds_parameter_grp: rds-parameter-group
+    root_volume_size: 25
+    root_volume_type: gp2
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
-    destination_cidr_block: 0.0.0.0/0

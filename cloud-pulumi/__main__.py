@@ -45,6 +45,7 @@ Virtual_private_cloud = aws.ec2.Vpc(vpc_name,
                                         "Name": vpc_name,
                                     })
 
+vpc_id = Virtual_private_cloud.id
 # Define availability zones
 azs = aws.get_availability_zones().names
 num_azs = len(azs)
@@ -128,7 +129,6 @@ public_route = aws.ec2.Route(f"{vpc_name}-public-route",
                              route_table_id=public_route_table.id,
                              destination_cidr_block=destination_cidr_block,
                              gateway_id=internet_gateway.id)
-
 
 
 def create_security_group(vpc_id, destination_block):
@@ -237,7 +237,7 @@ def create_db_parameter_group(db_instance_name):
 def create_private_subnet_group(subnet_ids, subnet_group_name):
     """Create a DB subnet group for RDS instances using private subnets."""
 
-    db_subnet_group = aws.rds.SubnetGroup("private-subnet-group",
+    db_subnet_group = aws.rds.SubnetGroup("private_subnet_group_name",
                                           subnet_ids=subnet_ids,
                                           name=subnet_group_name,
                                           description="DB Subnet Group for private RDS instances",
@@ -249,7 +249,6 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
 
 
 def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
-
     """Creates a new EC2 instance.
 
     Args:
@@ -303,7 +302,6 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
     return ec2_instance
 
 
-
 def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
                         security_group_id):
     """Create an RDS instance with the specified configuration."""
@@ -335,7 +333,7 @@ def demo():
     """
     :rtype: object
     """
-    vpc_id = Virtual_private_cloud.id
+
     destination_block = '0.0.0.0/0'
 
     # Create the security group.
@@ -347,6 +345,8 @@ def demo():
     # ami_id = lookup_ami()
 
     private_subnet_ids = [privateSubnet.id for privateSubnet in private_subnets]
+    outp = pulumi.Output.concat("Private Subnet Ids ", private_subnet_ids)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
 
     private_subnet_group = create_private_subnet_group(private_subnet_ids, private_subnet_group_name)
 
@@ -357,14 +357,12 @@ def demo():
         db_instance_class=db_instance_class,  # Use the cheapest class available
         username=db_username,
         password=db_password,
-        subnet_group_name=private_subnet_group_name,  # Replace with the name of your private subnet group
-
+        subnet_group_name=private_subnet_group,  # Replace with the name of your private subnet group
         security_group_id=database_security_group.id
     )
 
     # Create the EC2 instance.
     instance_demo = create_instance(ami_id, public_subnets[0], security_group.id, rds_instance_demo)
-
 
     return rds_instance_demo, instance_demo
 
