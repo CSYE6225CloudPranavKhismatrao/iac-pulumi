@@ -1,6 +1,6 @@
 encryptionsalt: v1:Cbo/DfuFQMY=:v1:6FHswrM9eqIsGO5h:DuQaVaMu2iVv0px4Wu4mBJ3rx/WLkw==
 config:
-  aws:profile: demo
+  aws:profile: dev
   aws:region: us-east-1
   pulumi-dev:data:
     active: true
@@ -20,3 +20,4 @@ config:
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
     domain_name: demo.pranavkhismatrao.me
+

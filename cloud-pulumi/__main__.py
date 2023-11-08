@@ -250,6 +250,7 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
 
 
 def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2, role):
+
     """Creates a new EC2 instance.
 
     Args:
@@ -438,6 +439,7 @@ def demo():
     # role_attachment = aws.ec2.InstanceRoleAttachment("role-attachment",
     #                                                   instance_id=instance_demo.id,
     #                                                   role=role.name)
+
 
     return rds_instance_demo, instance_demo
 
