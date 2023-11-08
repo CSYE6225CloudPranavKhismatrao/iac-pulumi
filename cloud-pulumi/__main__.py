@@ -35,6 +35,7 @@ db_password = data.get("db_password")
 db_instance_class = data.get("db_instance_class")
 db_engine = data.get("db_engine")
 ami_id = data.get("ami_id")
+domain_name = data.get("domain_name")
 # ========================================================================
 
 # Create the VPC using the fetched config values
@@ -248,7 +249,8 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
     return db_subnet_group
 
 
-def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
+def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2, role):
+
     """Creates a new EC2 instance.
 
     Args:
@@ -267,7 +269,11 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
         "#!/bin/bash",
         f"echo 'spring.jpa.hibernate.ddl-auto=update' >> {app_properties}",
         f"echo 'spring.datasource.username=csye6225' >> {app_properties}",
-        f"echo 'spring.datasource.password=mypassword' >> {app_properties}"
+        f"echo 'spring.datasource.password=mypassword' >> {app_properties}",
+        f"echo 'env.CSV_PATH=/opt/users.csv' >> {app_properties}",
+        f"echo 'env.domain=localhost' >> {app_properties}",
+        f"echo 'logging.file.name=my-app.log' >> {app_properties}",
+        # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
         "jdbc:postgresql://",
@@ -283,14 +289,26 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2):
         rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"))
 
     user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/webapp/application.properties", "\n")
+    user_data = pulumi.Output.concat(user_data, "\nsudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/cloudwatch-config.json \
+    -s", "\n")
     outp = pulumi.Output.concat("EC2 Security Group ID ", security_group_id)
     outp.apply(lambda id: print(f"Hello, {id}!"))
-    ec2_instance = aws.ec2.Instance("instance",
+
+    # You need to refer to the role's name
+    instance_profile = aws.iam.InstanceProfile('myInstanceProfile',
+                                           role = role.name
+                                           )
+
+    ec2_instance = aws.ec2.Instance("EC2Instance",
                                     ami=ami_id,
                                     instance_type="t2.micro",
                                     subnet_id=subnet_id,
                                     key_name="ec2-key",
                                     user_data=user_data,
+                                    iam_instance_profile=instance_profile.name,
                                     root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
                                         volume_type=data.get("root_volume_type"),
                                         volume_size=data.get("root_volume_size"),
@@ -329,6 +347,18 @@ def create_rds_instance(db_instance_name, db_engine, db_instance_class, username
     return rdsInstance
 
 
+# ============================ Route53 Code - Assignment 7 =======================================
+def route53_record(name, zone_id, type, records, ttl=60):
+    return aws.route53.Record(name,
+                              zone_id=zone_id,
+                              name=name,
+                              type=type,
+                              ttl=ttl,
+                              records=records)
+
+
+# ===============================================================================================
+
 def demo():
     """
     :rtype: object
@@ -360,9 +390,56 @@ def demo():
         subnet_group_name=private_subnet_group,  # Replace with the name of your private subnet group
         security_group_id=database_security_group.id
     )
+    #
+    # Creating IAM Role and policy for CloudWatch Logs and attaching to EC2 Instance
+    role = aws.iam.Role("my-role",
+                        assume_role_policy="""{
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                "Action": "sts:AssumeRole",
+                                "Principal": {
+                                    "Service": "ec2.amazonaws.com"
+                                },
+                                "Effect": "Allow",
+                                "Sid": ""
+                                }
+                            ]
+                            }""")
+
+    # Attaching CloudWatchLogsFullAccess Policy to the role
+    aws.iam.RolePolicyAttachment("my-policy",
+                                 role=role.name,
+                                 policy_arn="arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy")
 
     # Create the EC2 instance.
-    instance_demo = create_instance(ami_id, public_subnets[0], security_group.id, rds_instance_demo)
+    instance_demo = create_instance(ami_id, public_subnets[0], security_group.id, rds_instance_demo, role)
+    public_ip = pulumi.Output.concat("EC2 Instance Public IP ", instance_demo.public_ip)
+    public_ip.apply(lambda ip: print(f"Hello, {ip}!"))
+
+    # Configure a Route53 record for the EC2 instance.
+    selected = aws.route53.get_zone(name=domain_name)
+    # dev = aws.route53.Zone("dev", tags={
+    #     "Environment": "dev",
+    # })
+    # record = route53_record("dev-A", selected.zone_id, "A", dev.name_servers)
+    zoneId = pulumi.Output.concat("ZONE ", selected.zone_id)
+    zoneId.apply(lambda id: print(f"Hello, {id}!"))
+
+    print("Create Route53 Record")
+    aws.route53.Record("www",
+                       zone_id=selected.zone_id,
+                       name=selected.name,
+                       type="A",
+                       ttl=60,
+                       records=[instance_demo.public_ip])
+
+    #
+    # # Attaching the role to EC2 Instance
+    # role_attachment = aws.ec2.InstanceRoleAttachment("role-attachment",
+    #                                                   instance_id=instance_demo.id,
+    #                                                   role=role.name)
+
 
     return rds_instance_demo, instance_demo
 

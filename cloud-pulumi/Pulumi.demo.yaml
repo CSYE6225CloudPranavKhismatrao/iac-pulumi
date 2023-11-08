@@ -4,7 +4,7 @@ config:
   aws:region: us-east-1
   pulumi-dev:data:
     active: true
-    ami_id: ami-03b15fb3a737af2f1
+    ami_id: ami-0cdf5e66b9766af01
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
@@ -19,3 +19,5 @@ config:
     root_volume_type: gp2
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
+    domain_name: demo.pranavkhismatrao.me
+
