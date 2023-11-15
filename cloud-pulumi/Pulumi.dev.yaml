@@ -4,7 +4,7 @@ config:
   aws:region: us-east-1
   pulumi-dev:data:
     active: true
-    ami_id: ami-01a5303280bc29e55
+    ami_id: ami-0ec10e68c84dee578
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
