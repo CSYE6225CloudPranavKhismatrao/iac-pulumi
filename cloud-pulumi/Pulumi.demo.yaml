@@ -1,10 +1,10 @@
 encryptionsalt: v1:Cbo/DfuFQMY=:v1:6FHswrM9eqIsGO5h:DuQaVaMu2iVv0px4Wu4mBJ3rx/WLkw==
 config:
-  aws:profile: dev
+  aws:profile: demo
   aws:region: us-east-1
   pulumi-dev:data:
     active: true
-    ami_id: ami-051769b14588a5764
+    ami_id: ami-0eb8573e4aa4d73d7
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
