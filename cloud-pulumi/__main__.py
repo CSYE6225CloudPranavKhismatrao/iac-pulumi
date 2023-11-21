@@ -624,7 +624,7 @@ def demo():
     # # Create Load Balancer for ec2 Instances to accept traffic on PORT 80 and forward to PORT 8080
     load_balancer = aws.lb.LoadBalancer("LoadBalancer",
                                         security_groups=[load_balancer_security_group.id],
-                                        subnets=[public_subnet.id for public_subnet in public_subnets],
+                                        subnets=[public_subnets[0].id],
                                         load_balancer_type="application",
                                         enable_deletion_protection=False,
                                         internal=False,
