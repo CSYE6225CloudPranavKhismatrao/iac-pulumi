@@ -431,7 +431,7 @@ def demo():
                               description="Allow all outbound traffic by default",
                               from_port=0,
                               to_port=0,
-                              protocol="tcp",
+                              protocol="-1",
                               type="egress",
                               cidr_blocks=[destination_block],
                               security_group_id=load_balancer_security_group.id,
