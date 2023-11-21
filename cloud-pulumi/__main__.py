@@ -285,6 +285,15 @@ def getUserData(rds_instance_for_ec2):
         f"echo 'env.CSV_PATH=/opt/users.csv' >> {app_properties}",
         f"echo 'env.domain=localhost' >> {app_properties}",
         f"echo 'logging.file.name=my-app.log' >> {app_properties}",
+        f"echo 'management.endpoints.enabled-by-default=false' >> {app_properties}",
+        f"echo 'management.endpoint.info.enabled=true' >> {app_properties}",
+        f"echo 'management.endpoint.health.enabled=true' >> {app_properties}",
+        f"echo 'management.endpoint.health.show-details=always' >> {app_properties}",
+        f"echo 'management.endpoint.metrics.enabled=true' >> {app_properties}",
+        f"echo 'management.endpoints.web.base-path=' >> {app_properties}",
+        f"echo 'management.endpoints.web.path-mapping.health=/healthz' >> {app_properties}",
+        f"echo 'management.endpoints.web.path-mapping.metrics=/metrics' >> {app_properties}",
+        f"echo 'management.endpoints.web.exposure.include=health,info,metrics' >> {app_properties}",
         # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
