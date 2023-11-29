@@ -298,8 +298,7 @@ def getUserData(rds_instance_for_ec2, topic, name):
         f"echo 'AWS_ACCESS_KEY_ID={data.get('AWS_ACCESS_KEY_ID')}' >> {app_properties}",
         f"echo 'AWS_SECRET_ACCESS_KEY={data.get('AWS_SECRET_ACCESS_KEY')}' >> {app_properties}",
         f"echo 'AWS_REGION={data.get('AWS_REGION')}' >> {app_properties}",
-        f"echo 'DOMAIN_NAME={name}' >> {app_properties}",
-
+ 
         # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
