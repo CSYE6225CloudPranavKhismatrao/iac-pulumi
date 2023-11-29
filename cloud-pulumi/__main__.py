@@ -3,6 +3,8 @@ import pulumi_aws as aws
 import ipaddress
 import base64
 
+import pulumi_gcp as gcp
+
 
 def calculate_subnets(vpc_cidr, num_subnets):
     try:
@@ -274,9 +276,8 @@ def create_private_subnet_group(subnet_ids, subnet_group_name):
     return db_subnet_group
 
 
-def getUserData(rds_instance_for_ec2):
+def getUserData(rds_instance_for_ec2, topic, name):
     app_properties = "/tmp/application.properties"
-
     user_data = [
         "#!/bin/bash",
         f"echo 'spring.jpa.hibernate.ddl-auto=update' >> {app_properties}",
@@ -294,20 +295,27 @@ def getUserData(rds_instance_for_ec2):
         f"echo 'management.endpoints.web.path-mapping.health=/healthz' >> {app_properties}",
         f"echo 'management.endpoints.web.path-mapping.metrics=/metrics' >> {app_properties}",
         f"echo 'management.endpoints.web.exposure.include=health,info,metrics' >> {app_properties}",
+        f"echo 'AWS_ACCESS_KEY_ID={data.get('AWS_ACCESS_KEY_ID')}' >> {app_properties}",
+        f"echo 'AWS_SECRET_ACCESS_KEY={data.get('AWS_SECRET_ACCESS_KEY')}' >> {app_properties}",
+        f"echo 'AWS_REGION={data.get('AWS_REGION')}' >> {app_properties}",
+        f"echo 'DOMAIN_NAME={name}' >> {app_properties}",
+
         # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
         "jdbc:postgresql://",
         rds_instance_for_ec2.address,
-
         ":5432/",
         "csye6225"
     )
+    topic_arn = pulumi.Output.concat("", topic.arn)
 
     user_data = pulumi.Output.concat(
         "\n".join(user_data),
         "\n",
-        rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"))
+        rds_instance_hostname.apply(func=lambda x: f"echo 'spring.datasource.url={x}' >> {app_properties}"),
+        "\n",
+        topic_arn.apply(func=lambda x: f"echo 'TOPIC_ARN={x}' >> {app_properties}"))
 
     user_data = pulumi.Output.concat(user_data, f"\nsudo mv {app_properties} /opt/webapp/application.properties", "\n")
     user_data = pulumi.Output.concat(user_data, "sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
@@ -333,7 +341,7 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2, 
 
     # ec2 = boto3.resource('ec2')
     # ami_id = 'ami-0541f6be93c08c0f7'
-    user_data = getUserData(rds_instance_for_ec2)
+    # user_data = getUserData(rds_instance_for_ec2, sns_topic, domain_name)
 
     outp = pulumi.Output.concat("EC2 Security Group ID ", security_group_id)
     outp.apply(lambda id: print(f"Hello, {id}!"))
@@ -343,22 +351,22 @@ def create_instance(ami_id, subnet_id, security_group_id, rds_instance_for_ec2, 
     #                                            role=role.name
     #                                            )
 
-    ec2_instance = aws.ec2.Instance("EC2Instance",
-                                    ami=ami_id,
-                                    instance_type="t2.micro",
-                                    subnet_id=subnet_id,
-                                    key_name="ec2-key",
-                                    user_data=user_data,
-                                    iam_instance_profile=instance_profile.name,
-                                    root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
-                                        volume_type=data.get("root_volume_type"),
-                                        volume_size=data.get("root_volume_size"),
-                                        delete_on_termination=True
-                                    ),
-                                    disable_api_termination=False,
-                                    vpc_security_group_ids=[security_group_id])
+    # ec2_instance = aws.ec2.Instance("EC2Instance",
+    #                                 ami=ami_id,
+    #                                 instance_type="t2.micro",
+    #                                 subnet_id=subnet_id,
+    #                                 key_name="ec2-key",
+    #                                 user_data=user_data,
+    #                                 iam_instance_profile=instance_profile.name,
+    #                                 root_block_device=aws.ec2.InstanceRootBlockDeviceArgs(
+    #                                     volume_type=data.get("root_volume_type"),
+    #                                     volume_size=data.get("root_volume_size"),
+    #                                     delete_on_termination=True
+    #                                 ),
+    #                                 disable_api_termination=False,
+    #                                 vpc_security_group_ids=[security_group_id])
 
-    return ec2_instance, user_data
+    return outp
 
 
 def create_rds_instance(db_instance_name, db_engine, db_instance_class, username, password, subnet_group_name,
@@ -500,6 +508,12 @@ def demo():
     aws.iam.RolePolicyAttachment("my-policy",
                                  role=role.name,
                                  policy_arn="arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy")
+
+    # Attaching sns Full Access Policy to the role
+    aws.iam.RolePolicyAttachment("sns-policy",
+                                 role=role.name,
+                                 policy_arn="arn:aws:iam::aws:policy/AmazonSNSFullAccess")
+
     instance_profile = aws.iam.InstanceProfile('myInstanceProfile',
                                                role=role.name
                                                )
@@ -525,8 +539,17 @@ def demo():
     #                                                   instance_id=instance_demo.id,
     #                                                   role=role.name)
 
+    # Create Amazon Simple Notification Service (Amazon SNS) topic creation with Pulumi
+    sns_topic = aws.sns.Topic("sns_topic_submission",
+                              display_name="Assignment Submission Topic",
+                              name="sns_topic_submission",
+                              tags={
+                                  "Name": "sns_topic_submission",
+                              }
+                              )
+
     # Create a base64 encoded string for the user data.
-    user_data = getUserData(rds_instance_demo)
+    user_data = getUserData(rds_instance_demo, sns_topic, domain_name)
 
     # Converting Output to String
     # data_string = pulumi.Output.concat(user_data)
@@ -552,7 +575,7 @@ def demo():
                                       )
 
     # Create a Launch Template for the EC2 instance.
-    launch_template = aws.ec2.LaunchTemplate("Launch_Template",
+    launch_template = aws.ec2.LaunchTemplate("Launch_Template1",
                                              image_id=ami_id,
                                              instance_type="t2.micro",
                                              key_name="ec2-key",
@@ -568,8 +591,8 @@ def demo():
                                              disable_api_termination=False,
                                              )
     # Auto Scaling Group for EC2 Instances
-    auto_scaling_group = aws.autoscaling.Group("AutoScalingGroup",
-                                               vpc_zone_identifiers=[public_subnets[0].id],
+    auto_scaling_group = aws.autoscaling.Group("AutoScalingGroup1",
+                                               vpc_zone_identifiers=[public_subnets[0].id, public_subnets[1].id],
                                                launch_template=aws.autoscaling.GroupLaunchTemplateArgs(
                                                    id=launch_template.id,
                                                    # version="$Latest"
@@ -631,9 +654,9 @@ def demo():
                                                     )
 
     # # Create Load Balancer for ec2 Instances to accept traffic on PORT 80 and forward to PORT 8080
-    load_balancer = aws.lb.LoadBalancer("LoadBalancer",
+    load_balancer = aws.lb.LoadBalancer("LoadBalancer1",
                                         security_groups=[load_balancer_security_group.id],
-                                        subnets=[public_subnets[0].id],
+                                        subnets=[public_subnets[0].id, public_subnets[1].id],
                                         load_balancer_type="application",
                                         enable_deletion_protection=False,
                                         internal=False,
@@ -671,6 +694,100 @@ def demo():
                            "evaluateTargetHealth": True,
                        }],
                        )
+
+    # Assignment 09
+
+    outp = pulumi.Output.concat("TOPIC Generation ", sns_topic.id)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
+
+    # Create IAM ROle for lambda function
+    lambda_role = aws.iam.Role("lambda_role",
+                               assume_role_policy="""{
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                "Action": "sts:AssumeRole",
+                                "Principal": {
+                                    "Service": "lambda.amazonaws.com"
+                                },
+                                "Effect": "Allow",
+                                "Sid": ""
+                                }
+                            ]
+                            }""")
+
+    outp = pulumi.Output.concat("LAMBDA NAME: ", lambda_role.name)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
+
+    outp = pulumi.Output.concat("LAMBDA ID : ", lambda_role.id)
+    outp.apply(lambda id: print(f"Hello, {id}!"))
+
+    # # Attaching CloudWatchLogsFullAccess Policy to the role
+    aws.iam.RolePolicyAttachment("lambda_policy",
+                                 role=lambda_role.name,
+                                 policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")
+
+    # # Create a Google Cloud Storage bucket
+    bucket = gcp.storage.Bucket("csye6225-bucket",
+                                location="US-EAST1",
+                                project="sunlit-core-406400",
+                                )
+
+    # Create a Google Cloud Service Account
+    service_account = gcp.serviceaccount.Account("csye6225-service-account",
+                                                 account_id="csye6225-service-account",
+                                                 display_name="csye6225-service-account",
+                                                 )
+
+    #  Create access keys for the service account
+    service_account_key = gcp.serviceaccount.Key("csye6225-service-account-key",
+                                                 service_account_id=service_account.name,
+                                                 public_key_type="TYPE_X509_PEM_FILE",
+                                                 private_key_type="TYPE_GOOGLE_CREDENTIALS_FILE",
+                                                 )
+
+    member = gcp.storage.BucketIAMMember("member",
+                                         bucket=bucket.name,
+                                         role="roles/storage.admin",
+                                         member=service_account.member)  # s.apply(lambda members: members[0]
+
+    # Create Lambda function
+    lambda_function = aws.lambda_.Function("lambda_function",
+                                           role=lambda_role.arn,
+                                           runtime="python3.10",
+                                           handler="main.lambda_handler",
+                                           code=pulumi.AssetArchive({
+                                               ".": pulumi.FileArchive("/Users/pranavkhismatrao/Northeastern/Fall_Sem_2023/Cloud/serverless/deployment-package.zip")
+                                           }),
+                                           environment=aws.lambda_.FunctionEnvironmentArgs(
+                                               variables={
+                                                   "SNS_TOPIC_ARN": sns_topic.arn,
+                                                   "GOOGLE_CREDENTIALS": service_account_key.private_key,
+                                                   "GCP_BUCKET_NAME": bucket.name,
+                                                   "FROM_ADDRESS": "mailgun@" + domain_name,
+                                                   "DYNAMO_TABLE_NAME": "csye6225_DynamoDB",
+                                               }
+                                           ),
+                                           tags={
+                                               "Name": "lambda_function",
+                                           },
+                                           )
+
+    # Create Lambda Permission
+    lambda_permission = aws.lambda_.Permission("lambda_permission",
+                                               action="lambda:InvokeFunction",
+                                               function=lambda_function.name,
+                                               principal="sns.amazonaws.com",
+                                               source_arn=sns_topic.arn,
+                                               )
+
+    # Create Lambda Subscription
+    lambda_subscription = aws.sns.TopicSubscription("lambda_subscription",
+                                                    endpoint=lambda_function.arn,
+                                                    protocol="lambda",
+                                                    topic=sns_topic.arn,
+                                                    )
+    #
 
     return rds_instance_demo
 
