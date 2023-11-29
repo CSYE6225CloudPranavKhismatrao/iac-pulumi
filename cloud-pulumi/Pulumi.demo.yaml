@@ -2,15 +2,17 @@ encryptionsalt: v1:Cbo/DfuFQMY=:v1:6FHswrM9eqIsGO5h:DuQaVaMu2iVv0px4Wu4mBJ3rx/WL
 config:
   aws:profile: demo
   aws:region: us-east-1
+  gcp:project: sunlit-core-406400
   pulumi-dev:data:
     active: true
-    ami_id: ami-02f8f70b5a967a217
+    ami_id: ami-02f92f1572f088f23
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
     db_password: mypassword
     db_username: csye6225
     destination_cidr_block: 0.0.0.0/0
+    domain_name: demo.pranavkhismatrao.me
     no_of_subnets: 6 # desired level
     postgres_port: 5432
     private_subnet_group_name: private-subnet-group
@@ -19,5 +21,8 @@ config:
     root_volume_type: gp2
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
-    domain_name: demo.pranavkhismatrao.me
+    AWS_ACCESS_KEY_ID: AKIA55GFDRQSLWJDJK7T
+    AWS_SECRET_ACCESS_KEY: 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
+    AWS_REGION: us-east-1
+
 
