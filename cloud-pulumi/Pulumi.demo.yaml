@@ -5,7 +5,7 @@ config:
   gcp:project: sunlit-core-406400
   pulumi-dev:data:
     active: true
-    ami_id: ami-02f92f1572f088f23
+    ami_id: ami-063ad3182ac66cf87
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
