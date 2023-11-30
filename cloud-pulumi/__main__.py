@@ -298,7 +298,7 @@ def getUserData(rds_instance_for_ec2, topic, name):
         f"echo 'AWS_ACCESS_KEY_ID={data.get('AWS_ACCESS_KEY_ID')}' >> {app_properties}",
         f"echo 'AWS_SECRET_ACCESS_KEY={data.get('AWS_SECRET_ACCESS_KEY')}' >> {app_properties}",
         f"echo 'AWS_REGION={data.get('AWS_REGION')}' >> {app_properties}",
- 
+        f"echo 'DOMAIN_NAME={name}' >> {app_properties}",
         # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
@@ -726,10 +726,16 @@ def demo():
                                  role=lambda_role.name,
                                  policy_arn="arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole")
 
+    aws.iam.RolePolicyAttachment("lambda_policy-dynamoDB",
+                                 role=lambda_role.name,
+                                 policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")
+
+
     # # Create a Google Cloud Storage bucket
     bucket = gcp.storage.Bucket("csye6225-bucket",
                                 location="US-EAST1",
                                 project="sunlit-core-406400",
+                                force_destroy=True,
                                 )
 
     # Create a Google Cloud Service Account
@@ -750,6 +756,17 @@ def demo():
                                          role="roles/storage.admin",
                                          member=service_account.member)  # s.apply(lambda members: members[0]
 
+    # Create DynamoDB Table in AWS
+    dynamodb_table = aws.dynamodb.Table("csye6225_dynamodb_table",
+                                        attributes=[aws.dynamodb.TableAttributeArgs(
+                                            name="id",
+                                            type="S",
+                                        )],
+                                        hash_key="id",
+                                        read_capacity=5,
+                                        write_capacity=5,
+                                        )
+
     # Create Lambda function
     lambda_function = aws.lambda_.Function("lambda_function",
                                            role=lambda_role.arn,
@@ -764,13 +781,16 @@ def demo():
                                                    "GOOGLE_CREDENTIALS": service_account_key.private_key,
                                                    "GCP_BUCKET_NAME": bucket.name,
                                                    "FROM_ADDRESS": "mailgun@" + domain_name,
-                                                   "DYNAMO_TABLE_NAME": "csye6225_DynamoDB",
+                                                   "DYNAMO_TABLE_NAME": dynamodb_table.name,
                                                }
                                            ),
+                                           timeout=60,
+
                                            tags={
                                                "Name": "lambda_function",
                                            },
                                            )
+
 
     # Create Lambda Permission
     lambda_permission = aws.lambda_.Permission("lambda_permission",
