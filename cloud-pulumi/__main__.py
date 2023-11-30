@@ -299,7 +299,6 @@ def getUserData(rds_instance_for_ec2, topic, name):
         f"echo 'AWS_SECRET_ACCESS_KEY={data.get('AWS_SECRET_ACCESS_KEY')}' >> {app_properties}",
         f"echo 'AWS_REGION={data.get('AWS_REGION')}' >> {app_properties}",
         f"echo 'DOMAIN_NAME={name}' >> {app_properties}",
-
         # f"echo 'logging.file.path=/var/log' >> {app_properties}",
     ]
     rds_instance_hostname = pulumi.Output.concat(
@@ -732,7 +731,6 @@ def demo():
                                  policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")
 
 
-
     # # Create a Google Cloud Storage bucket
     bucket = gcp.storage.Bucket("csye6225-bucket",
                                 location="US-EAST1",
@@ -787,6 +785,7 @@ def demo():
                                                }
                                            ),
                                            timeout=60,
+
                                            tags={
                                                "Name": "lambda_function",
                                            },
