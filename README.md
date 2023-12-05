@@ -22,3 +22,10 @@ Run pulumi up command in your terminal from the directory where you have this Pu
 
 Press y or enter when you get the prompt Do you want to perform this update? to confirm and proceed with creating the resources.
 
+## Command to import certificate to aws console
+```
+aws acm import-certificate --profile demo \
+--certificate fileb://demo_pranavkhismatrao.crt \
+--private-key fileb://private.key
+```
+

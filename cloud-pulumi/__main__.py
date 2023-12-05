@@ -575,7 +575,8 @@ def demo():
                                       )
 
     # Create a Launch Template for the EC2 instance.
-    launch_template = aws.ec2.LaunchTemplate("Launch_Template1",
+    launch_template = aws.ec2.LaunchTemplate("Launch_Template",
+                                             name="EC2_Launch_Template",
                                              image_id=ami_id,
                                              instance_type="t2.micro",
                                              key_name="ec2-key",
@@ -592,6 +593,7 @@ def demo():
                                              )
     # Auto Scaling Group for EC2 Instances
     auto_scaling_group = aws.autoscaling.Group("AutoScalingGroup1",
+                                               name="AutoScalingGroup",
                                                vpc_zone_identifiers=[public_subnets[0].id, public_subnets[1].id],
                                                launch_template=aws.autoscaling.GroupLaunchTemplateArgs(
                                                    id=launch_template.id,
@@ -662,11 +664,17 @@ def demo():
                                         internal=False,
                                         )
 
+    # Lookup arn for SSL Certificate for Load Balancer
+    ssl_certificate = aws.acm.get_certificate(domain=domain_name,
+                                              most_recent=True,
+                                              )
+
     # # Create a listener for the load balancer.
     listener = aws.lb.Listener("Listener",
                                load_balancer_arn=load_balancer.arn,
-                               port=80,
-                               protocol="HTTP",
+                               port=443,
+                               protocol="HTTPS",
+                               certificate_arn=ssl_certificate.arn,
                                default_actions=[{
                                    "type": "forward",
                                    "target_group_arn": target_group.arn,
@@ -731,9 +739,7 @@ def demo():
                                  role=lambda_role.name,
                                  policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess")
 
-
-
-    # # Create a Google Cloud Storage bucket
+    # Create a Google Cloud Storage bucket
     bucket = gcp.storage.Bucket("csye6225-bucket",
                                 location="US-EAST1",
                                 project="sunlit-core-406400",
@@ -774,9 +780,7 @@ def demo():
                                            role=lambda_role.arn,
                                            runtime="python3.10",
                                            handler="main.lambda_handler",
-                                           code=pulumi.AssetArchive({
-                                               ".": pulumi.FileArchive("/Users/pranavkhismatrao/Northeastern/Fall_Sem_2023/Cloud/serverless/deployment-package.zip")
-                                           }),
+                                           code= pulumi.FileArchive("/Users/pranavkhismatrao/Northeastern/Fall_Sem_2023/Cloud/serverless/deployment-package.zip"),
                                            environment=aws.lambda_.FunctionEnvironmentArgs(
                                                variables={
                                                    "SNS_TOPIC_ARN": sns_topic.arn,
@@ -791,7 +795,6 @@ def demo():
                                                "Name": "lambda_function",
                                            },
                                            )
-
 
     # Create Lambda Permission
     lambda_permission = aws.lambda_.Permission("lambda_permission",
