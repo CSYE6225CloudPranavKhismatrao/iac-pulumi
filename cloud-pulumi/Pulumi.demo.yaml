@@ -5,7 +5,7 @@ config:
   gcp:project: sunlit-core-406400
   pulumi-dev:data:
     active: true
-    ami_id: ami-063ad3182ac66cf87
+    ami_id: ami-02b8f7ba33d19350e
     db_engine: postgres
     db_instance_class: db.t2.micro
     db_name: csye6225
@@ -21,8 +21,6 @@ config:
     root_volume_type: gp2
     vpcCidr: 10.1.0.0/16
     vpcName: devenv
-    AWS_ACCESS_KEY_ID: AKIA55GFDRQSLWJDJK7T
-    AWS_SECRET_ACCESS_KEY: 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
     AWS_REGION: us-east-1
 
 
